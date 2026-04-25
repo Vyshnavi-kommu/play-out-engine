@@ -145,8 +145,14 @@ class PayoutCreateView(APIView):
             resp_status = status.HTTP_201_CREATED
 
             # Store response in idempotency record.
+            # We use a trick to ensure it's JSON serializable (UUIDs -> strings)
+            # which is needed for some DB backends like SQLite.
+            from django.core.serializers.json import DjangoJSONEncoder
+            import json
+            serializable_data = json.loads(json.dumps(response_data, cls=DjangoJSONEncoder))
+
             IdempotencyKey.objects.filter(id=idem.id).update(
-                response_body=response_data,
+                response_body=serializable_data,
                 response_status=resp_status,
                 resolved_at=timezone.now(),
             )
