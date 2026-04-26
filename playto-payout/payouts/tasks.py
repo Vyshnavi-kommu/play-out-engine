@@ -105,12 +105,12 @@ def process_payout(self, payout_id: str):
                 logger.info(f"Payout {payout_id} completed")
 
             elif outcome == 'failure':
-                # Refund and state change are ATOMIC — either both happen or neither.
-                _refund_to_ledger(payout)
+                # No ledger entry needed — funds were never debited.
+                # The held amount naturally releases when status leaves PENDING/PROCESSING.
                 payout.failure_reason = 'Bank declined the transfer'
                 payout.transition_to(Payout.FAILED, save=False)
                 payout.save(update_fields=['status', 'failure_reason', 'updated_at'])
-                logger.info(f"Payout {payout_id} failed, funds refunded")
+                logger.info(f"Payout {payout_id} failed, hold released")
 
     except Exception as exc:
         logger.exception(f"Error processing payout {payout_id}: {exc}")
@@ -147,8 +147,7 @@ def check_stuck_payouts():
                 )
                 process_payout.apply_async(args=[str(payout.id)], countdown=backoff)
             else:
-                # Max retries exceeded — fail and refund atomically.
-                _refund_to_ledger(payout)
+                # Max retries exceeded — fail. No ledger entry needed (never debited).
                 payout.failure_reason = f'Timed out after {MAX_RETRIES} retries'
                 payout.transition_to(Payout.FAILED, save=False)
                 payout.save(update_fields=['status', 'failure_reason', 'updated_at'])

@@ -1,22 +1,47 @@
 import { paise2inr } from '../utils/format'
 
-export default function BalanceCard({ available, held }) {
+function Card({ label, value, color, bg, sub, pct, icon }) {
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1px', background: 'var(--border)', borderRadius: 16, overflow: 'hidden' }}>
-      <div style={{ background: 'var(--surface)', padding: '2rem' }}>
-        <p style={{ color: 'var(--muted)', fontSize: 11, letterSpacing: 3, textTransform: 'uppercase', marginBottom: 8 }}>Available</p>
-        <p style={{ fontSize: 36, fontWeight: 800, color: 'var(--accent)', fontFamily: 'IBM Plex Mono, monospace' }}>
-          {paise2inr(available)}
+    <div style={{
+      flex: 1, background: 'var(--surface)', borderRadius: 16,
+      padding: '1.5rem 1.75rem', boxShadow: 'var(--shadow)',
+      border: '1px solid var(--border)', position: 'relative', overflow: 'hidden',
+    }}>
+      <div style={{
+        position: 'absolute', top: 0, right: 0, width: 120, height: 120,
+        background: bg, borderRadius: '0 16px 0 120px', opacity: 0.6,
+      }} />
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+        <span style={{ fontSize: 18 }}>{icon}</span>
+        <p style={{ fontSize: 11, fontWeight: 600, letterSpacing: 1.5, textTransform: 'uppercase', color: 'var(--muted)', fontFamily: 'Syne, sans-serif' }}>
+          {label}
         </p>
-        <p style={{ color: 'var(--muted)', fontSize: 12, marginTop: 4 }}>Ready to withdraw</p>
       </div>
-      <div style={{ background: 'var(--surface)', padding: '2rem' }}>
-        <p style={{ color: 'var(--muted)', fontSize: 11, letterSpacing: 3, textTransform: 'uppercase', marginBottom: 8 }}>Held</p>
-        <p style={{ fontSize: 36, fontWeight: 800, color: 'var(--warn)', fontFamily: 'IBM Plex Mono, monospace' }}>
-          {paise2inr(held)}
-        </p>
-        <p style={{ color: 'var(--muted)', fontSize: 12, marginTop: 4 }}>Processing payouts</p>
+      <p style={{ fontSize: 32, fontWeight: 800, color, fontFamily: 'IBM Plex Mono, monospace', letterSpacing: -1, lineHeight: 1 }}>
+        {value}
+      </p>
+      <div style={{ marginTop: 14, height: 4, background: 'var(--border)', borderRadius: 2 }}>
+        <div style={{ height: '100%', width: `${Math.min(pct, 100)}%`, background: color, borderRadius: 2, transition: 'width 0.6s ease' }} />
       </div>
+      <p style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6 }}>{sub}</p>
+    </div>
+  )
+}
+
+export default function BalanceCard({ available, held }) {
+  const total = available + held || 1
+  return (
+    <div style={{ display: 'flex', gap: 16 }}>
+      <Card
+        icon="💰" label="Available Balance"
+        value={paise2inr(available)} color="var(--accent)" bg="var(--accent-light)"
+        sub="Ready to withdraw" pct={(available / total) * 100}
+      />
+      <Card
+        icon="⏳" label="On Hold"
+        value={paise2inr(held)} color={held > 0 ? 'var(--warn)' : 'var(--muted2)'} bg={held > 0 ? 'var(--warn-light)' : 'var(--surface2)'}
+        sub="Processing payouts" pct={(held / total) * 100}
+      />
     </div>
   )
 }

@@ -63,7 +63,7 @@ class Command(BaseCommand):
                             description=desc,
                             reference_id=f'seed-{merchant.id}',
                         )
-                    self.stdout.write(f"  → Seeded {len(m_data['credits'])} credits")
+                    self.stdout.write(f"  -> Seeded {len(m_data['credits'])} credits")
 
         self.stdout.write(self.style.SUCCESS('\nSeed complete!'))
         for m in Merchant.objects.all():

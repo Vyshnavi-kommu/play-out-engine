@@ -2,11 +2,15 @@
 Tests covering the two most critical correctness properties:
 1. Concurrency: two simultaneous 60 rupee payouts from a 100 rupee balance → exactly one succeeds.
 2. Idempotency: same idempotency key twice → same response, one payout created.
+
+Note: ConcurrencyTest requires PostgreSQL to be meaningful.
+SQLite uses table-level locking, not row-level SELECT FOR UPDATE, so the
+test is automatically skipped on SQLite with an explanatory message.
 """
 import threading
 import uuid
+from django.db import connection, OperationalError
 from django.test import TestCase, TransactionTestCase
-from django.urls import reverse
 from rest_framework.test import APIClient
 from django.db.models import Sum
 
@@ -38,13 +42,26 @@ class ConcurrencyTest(TransactionTestCase):
     TransactionTestCase is required here because we need real DB transactions
     committed and visible across threads. TestCase wraps everything in one
     transaction, making SELECT FOR UPDATE behave differently.
+
+    This test is skipped on SQLite. SQLite serializes all writes at the
+    table level, which trivially prevents overdrafts but doesn't test the
+    SELECT FOR UPDATE row-level lock that protects PostgreSQL. Run with
+    PostgreSQL to verify the actual concurrency invariant.
     """
+
+    def setUp(self):
+        if connection.vendor == 'sqlite':
+            self.skipTest(
+                'SQLite uses table-level locking, not row-level SELECT FOR UPDATE. '
+                'Run with PostgreSQL (DATABASE_URL=postgresql://...) for a meaningful concurrency test.'
+            )
 
     def test_concurrent_payouts_do_not_overdraw(self):
         """
         Balance = 10000 paise (₹100).
         Two threads each try to withdraw 6000 paise (₹60).
-        Exactly one must succeed; the other must be rejected with 400.
+        Exactly one must succeed (201); the other must be rejected (400 insufficient).
+        No overdraft must occur regardless of scheduling order.
         """
         merchant, bank = create_merchant_with_balance(
             'Concurrent Test Merchant', 'concurrent@test.com', 10000
@@ -64,7 +81,7 @@ class ConcurrencyTest(TransactionTestCase):
                         'merchant_id': str(merchant.id),
                     },
                     format='json',
-                    headers={'Idempotency-Key': str(uuid.uuid4())},
+                    **{'HTTP_IDEMPOTENCY_KEY': str(uuid.uuid4())},
                 )
                 results.append(resp.status_code)
             except Exception as e:
@@ -82,13 +99,12 @@ class ConcurrencyTest(TransactionTestCase):
 
         successes = results.count(201)
         failures = results.count(400)
+        self.assertEqual(successes, 1, f"Exactly one payout should succeed, got: {results}")
+        self.assertEqual(failures, 1, f"Exactly one payout should fail, got: {results}")
 
-        self.assertEqual(successes, 1, f"Exactly one payout should succeed, got statuses: {results}")
-        self.assertEqual(failures, 1, f"Exactly one payout should fail, got statuses: {results}")
-
-        # Verify DB: only one Payout created, held balance does not exceed available.
+        # DB invariant: held amount must not exceed ledger balance (no overdraft)
         payouts_created = Payout.objects.filter(merchant=merchant).count()
-        self.assertEqual(payouts_created, 1, "Only one Payout row should be in DB")
+        self.assertEqual(payouts_created, 1, "Only one Payout row should exist in DB")
 
         held = Payout.objects.filter(
             merchant=merchant, status__in=[Payout.PENDING, Payout.PROCESSING]

@@ -41,18 +41,23 @@ Seed data is loaded automatically on first boot.
 cd playto-payout
 pip install -r requirements.txt
 
-# Configure DB
+# Option A: PostgreSQL (recommended — required for concurrency test)
 export POSTGRES_DB=playto_payout
 export POSTGRES_USER=postgres
 export POSTGRES_PASSWORD=postgres
+export CELERY_BROKER_URL=redis://localhost:6379/0
+
+# Option B: SQLite + eager tasks (no Postgres/Redis needed, dev-only)
+export DATABASE_URL=sqlite:///db.sqlite3
+export CELERY_TASK_ALWAYS_EAGER=True
 
 python manage.py migrate
-python manage.py seed_data
+python manage.py shell -c "exec(open('seed.py').read())"   # seeds 3 merchants
 
 # Run server
 python manage.py runserver 8000
 
-# Run Celery worker (separate terminal)
+# Run Celery worker (separate terminal — skip if using CELERY_TASK_ALWAYS_EAGER)
 celery -A config worker --loglevel=info
 
 # Run Celery beat for stuck-payout checker (separate terminal)
@@ -140,6 +145,35 @@ See [EXPLAINER.md](./EXPLAINER.md) for full detail. Short version:
 
 ---
 
+## Admin Portal
+
+The frontend includes a protected admin portal accessible via the **Admin ⚙** button in the top-right header.
+
+**Password:** `admin5657`
+
+The portal is locked behind a client-side password gate (sessionStorage). After login you can:
+
+- View system-wide stats (merchants, volume, success rate)
+- See all payouts across every merchant with status filters
+- **Force-complete** or **force-cancel** any `pending` or `processing` payout
+- **Add new merchants** with bank account details and optional initial balance
+- **Auto-retry** all stuck PROCESSING payouts via the retry endpoint
+
+### Admin API Endpoints
+
+```
+GET  /api/v1/admin/stats/                        — system metrics
+GET  /api/v1/admin/payouts/?status=<s>           — all payouts (200 max, optional filter)
+POST /api/v1/admin/payouts/<id>/action/          — force complete or cancel
+     Body: { "action": "complete" | "cancel" }
+POST /api/v1/admin/retry-stuck/                  — retry all PROCESSING payouts
+GET  /api/v1/admin/merchants/                    — all merchants with full stats + bank accounts
+POST /api/v1/admin/merchants/                    — create new merchant
+     Body: { name, email, account_holder, account_number, ifsc_code, initial_balance_paise }
+```
+
+---
+
 ## Seeded Merchants
 
 | Name | Balance | Email |
@@ -160,4 +194,4 @@ See [EXPLAINER.md](./EXPLAINER.md) for full detail. Short version:
    - Env: `DATABASE_URL`, `CELERY_BROKER_URL`, `SECRET_KEY`, `DEBUG=False`, `ALLOWED_HOSTS=yourdomain.onrender.com`
 4. Create a Background Worker from the same repo:
    - Start: `celery -A config worker --loglevel=info`
-5. Run migrations: `python manage.py migrate && python manage.py seed_data`
+5. Run migrations and seed: `python manage.py migrate && python manage.py shell < seed.py`
